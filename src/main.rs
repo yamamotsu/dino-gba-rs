@@ -176,25 +176,23 @@ fn main(mut gba: agb::Gba) -> ! {
                 1,
                 SPRITE_ANIMATION_DELAY_FRAMES,
             ))));
-        }
 
-        if dino_grounded {
             if input.is_just_pressed(Button::A) {
                 dino_velocity_y = -gravity_px_per_square_frame * (MAX_JUMP_DURATION_FRAMES as i32);
                 // print_info(&mut mgba, format_args!("jump up velocity: {:?}", dino_velocity_y));
                 dino.set_sprite(object.sprite(DINO.sprite(1)));
                 dino_grounded = false;
-            }
+            };
         } else {
             // print_info(&mut mgba, format_args!("jumping velocity: {:?}", dino_velocity_y.floor()));
             dino_y = (dino_y as i32 + dino_velocity_y.floor()) as u16;
             if dino_y >= DINO_GROUNDED_Y {
                 dino_y = DINO_GROUNDED_Y;
                 dino_grounded = true;
-            }
+            };
             dino.set_y(dino_y);
             dino_velocity_y += gravity_px_per_square_frame;
-        }
+        };
 
         position.x += scroll_velocity;
         background.set_pos(&mut vram, position.floor());
@@ -207,7 +205,7 @@ fn main(mut gba: agb::Gba) -> ! {
                 &mut mgba,
                 format_args!("lvl up -> {}, V={:2}", speed_level + 1, scroll_velocity),
             );
-        }
+        };
 
         if bird_shown {
             bird.set_sprite(object.sprite(BIRD.sprite(frame_ranger(
@@ -223,7 +221,7 @@ fn main(mut gba: agb::Gba) -> ! {
             if bird_position.x < Num::new(-32) {
                 bird.hide();
                 bird_shown = false;
-            }
+            };
         } else if frame_count - t_last_bird_spawned > BIRD_SPAWN_INTERVAL_FRAMES as u32 {
             t_last_bird_spawned = frame_count;
             // Spawn bird
@@ -233,7 +231,7 @@ fn main(mut gba: agb::Gba) -> ! {
             bird_shown = true;
             bird.set_position(bird_position.floor());
             bird.show();
-        }
+        };
 
         if cactus_shown {
             cactus_position.x -= scroll_velocity;
@@ -242,7 +240,7 @@ fn main(mut gba: agb::Gba) -> ! {
             if cactus_position.x < Num::new(-32) {
                 cactus.hide();
                 cactus_shown = false;
-            }
+            };
         } else if frame_count - t_last_cactus_spawned > CACTUS_SPAWN_INTERVAL_FRAMES as u32 {
             t_last_cactus_spawned = frame_count;
             cactus_position.y = Num::new(CACTUS_Y as i32);
@@ -250,7 +248,7 @@ fn main(mut gba: agb::Gba) -> ! {
             cactus_shown = true;
             cactus.set_position(cactus_position.floor());
             cactus.show();
-        }
+        };
 
         // Wait for vblank, then commit the objects to the screen
         vblank.wait_for_vblank();
