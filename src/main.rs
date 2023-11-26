@@ -26,7 +26,7 @@ use agb::{
     fixnum::{num, Num, Vector2D},
     include_aseprite,
     input::Button,
-    mgba::{DebugLevel, Mgba, self},
+    mgba::{self, DebugLevel, Mgba},
     rng,
 };
 use alloc::{boxed::Box, vec::Vec};
@@ -35,7 +35,7 @@ use alloc::{boxed::Box, vec::Vec};
 agb::include_background_gfx!(bg_tiles, tiles => "assets/gfx/dino_background.bmp");
 const TILE_MAP_CSV_STR: &str = include_str!("../assets/tilemap/dino_map.csv");
 const BG_TILE_DATA: TileData = bg_tiles::tiles;
-const BG_TILE: TileSet = BG_TILE_DATA.tiles;
+const BG_TILES: TileSet = BG_TILE_DATA.tiles;
 const BG_TILE_CONFIG: &[TileSetting] = BG_TILE_DATA.tile_settings;
 
 const SPRITES: &Graphics = include_aseprite!("assets/gfx/dino.aseprite");
@@ -43,15 +43,24 @@ const SPRITES: &Graphics = include_aseprite!("assets/gfx/dino.aseprite");
 // We define some easy ways of referencing the sprites
 const DINO: &Tag = SPRITES.tags().get("Dino");
 const BIRD: &Tag = SPRITES.tags().get("Bird");
-const SPRITE_ANIMATION_DELAY_FRAMES: u32 = 10;
+const CACTUS: &Tag = SPRITES.tags().get("Cactus");
+const SPRITE_ANIMATION_DELAY_FRAMES: u32 = 8;
 
-const MAX_JUMP_HEIGHT_PX: u16 = 60;
-const MAX_JUMP_DURATION_FRAMES: u16 = 18;
+// Map Config
+const MAP_TILES_HEIGHT: u16 = 14;
+const MAP_TILES_OFFSET_Y: u16 = (20 - MAP_TILES_HEIGHT) / 2;
+const BLANK_TILE_IDX: u16 = 1;
 
-const GROUND_TILE_Y: u16 = 17;
-const GROUND_Y: u16 = GROUND_TILE_Y * 8;
-const DINO_GROUNDED_Y: u16 = GROUND_Y - 34;
+const GROUND_TILE_Y: u16 = 11 + MAP_TILES_OFFSET_Y;
+const GROUND_Y: u16 = GROUND_TILE_Y * 8 + 2;
+const DINO_GROUNDED_Y: u16 = GROUND_Y - 32;
+const CACTUS_Y: u16 = GROUND_Y - 32;
+
+// GamePlay Config
+const MAX_JUMP_HEIGHT_PX: u16 = 40;
+const MAX_JUMP_DURATION_FRAMES: u16 = 16;
 const BIRD_SPAWN_INTERVAL_FRAMES: u16 = 60 * 5;
+const CACTUS_SPAWN_INTERVAL_FRAMES: u16 = 60 * 3;
 const LEVEL_UP_INTERVAL_FRAMES: u16 = 60 * 30;
 
 fn frame_ranger(count: u32, start: u32, end: u32, delay: u32) -> usize {
@@ -74,7 +83,7 @@ fn main(mut gba: agb::Gba) -> ! {
     // Debug output
     print_info(
         &mut mgba,
-        format_args!("Tile format: {:?}", BG_TILE.format()),
+        format_args!("Tile format: {:?}", BG_TILES.format()),
     );
     print_info(&mut mgba, format_args!("Tile config: {:?}", BG_TILE_CONFIG));
     for color_idx in 0..16 {
@@ -85,7 +94,7 @@ fn main(mut gba: agb::Gba) -> ! {
                 bg_tiles::PALETTES[0].colour(color_idx)
             ),
         );
-    };
+    }
 
     // Physics
     let gravity_px_per_square_frame: Num<i32, 8> =
@@ -113,12 +122,16 @@ fn main(mut gba: agb::Gba) -> ! {
             TileFormat::FourBpp,
         ),
         Box::new(|pos| {
-            let x = pos.x.rem_euclid(64);
-            let y = pos.y.rem_euclid(20);
-            let mut _mgba: agb::mgba::Mgba = agb::mgba::Mgba::new().unwrap();
-            let tile_idx = *tile_map.get((x + 64 * y) as usize).unwrap_or(&0) as usize;
-            let tile_config = BG_TILE_CONFIG[tile_idx];
-            (&BG_TILE_DATA.tiles, tile_config)
+            let x = pos.x.rem_euclid(64) as u16;
+            let y = pos.y.rem_euclid(20) as u16;
+            let tile_idx = if y >= MAP_TILES_OFFSET_Y
+                && y < MAP_TILES_OFFSET_Y + MAP_TILES_HEIGHT
+            {
+                *tile_map.get((x + 64 * (y - MAP_TILES_OFFSET_Y)) as usize).unwrap_or(&0) as usize
+            } else {
+                BLANK_TILE_IDX as usize
+            };
+            (&BG_TILES, BG_TILE_CONFIG[tile_idx])
         }),
     );
     background.init(&mut vram, (0, 0).into(), &mut || {});
@@ -131,36 +144,45 @@ fn main(mut gba: agb::Gba) -> ! {
     let object = gba.display.object.get_managed();
     let mut dino = object.object_sprite(DINO.sprite(0));
     let mut bird = object.object_sprite(BIRD.sprite(0));
+    let mut cactus = object.object_sprite(CACTUS.sprite(0));
 
     let mut frame_count: u32 = 0;
     let mut position: Vector2D<Num<i32, 8>> = (0, 0).into();
-    let mut scroll_velocity: Num<i32, 8> = num!(2.0);
+    let mut scroll_velocity: Num<i32, 8> = num!(2.5);
     let mut speed_level: u32 = 0;
+    let mut t_last_level_up: u32 = 0;
 
     let mut bird_shown: bool = false;
-    let mut bird_count: u16 = 0;
+    let mut t_last_bird_spawned: u32 = 0;
     let mut bird_position: Vector2D<Num<i32, 8>> = (0, 0).into();
-    let bird_velocity: Num<i32, 8> = num!(-0.2);
+    let bird_velocity: Num<i32, 8> = num!(-0.4);
 
     let mut dino_y: u16 = DINO_GROUNDED_Y;
     let mut dino_velocity_y: Num<i32, 8> = Num::new(0);
-    let mut dino_grounded: bool = false;
+    let mut dino_grounded: bool = true;
+
+    let mut cactus_shown: bool = false;
+    let mut cactus_position: Vector2D<Num<i32, 8>> = (0, 0).into();
+    let mut t_last_cactus_spawned: u32 = 0;
 
     dino.set_x(16).set_y(dino_y).show();
     object.commit();
 
     loop {
-        dino.set_sprite(object.sprite(DINO.sprite(frame_ranger(
-            frame_count,
-            0,
-            1,
-            SPRITE_ANIMATION_DELAY_FRAMES,
-        ))));
+        if dino_grounded {
+            dino.set_sprite(object.sprite(DINO.sprite(frame_ranger(
+                frame_count,
+                0,
+                1,
+                SPRITE_ANIMATION_DELAY_FRAMES,
+            ))));
+        }
 
         if dino_grounded {
             if input.is_just_pressed(Button::A) {
                 dino_velocity_y = -gravity_px_per_square_frame * (MAX_JUMP_DURATION_FRAMES as i32);
                 // print_info(&mut mgba, format_args!("jump up velocity: {:?}", dino_velocity_y));
+                dino.set_sprite(object.sprite(DINO.sprite(1)));
                 dino_grounded = false;
             }
         } else {
@@ -177,10 +199,14 @@ fn main(mut gba: agb::Gba) -> ! {
         position.x += scroll_velocity;
         background.set_pos(&mut vram, position.floor());
 
-        if frame_count >= ((speed_level + 1) * LEVEL_UP_INTERVAL_FRAMES as u32) {
+        if frame_count - t_last_level_up > LEVEL_UP_INTERVAL_FRAMES as u32 {
             speed_level += 1;
+            t_last_level_up = frame_count;
             scroll_velocity += num!(0.1);
-            print_info(&mut mgba, format_args!("lvl up -> {}, V={:2}", speed_level, scroll_velocity));
+            print_info(
+                &mut mgba,
+                format_args!("lvl up -> {}, V={:2}", speed_level + 1, scroll_velocity),
+            );
         }
 
         if bird_shown {
@@ -198,15 +224,32 @@ fn main(mut gba: agb::Gba) -> ! {
                 bird.hide();
                 bird_shown = false;
             }
-        } else if frame_count > (bird_count * BIRD_SPAWN_INTERVAL_FRAMES) as u32 {
-            bird_count += 1;
+        } else if frame_count - t_last_bird_spawned > BIRD_SPAWN_INTERVAL_FRAMES as u32 {
+            t_last_bird_spawned = frame_count;
             // Spawn bird
-            let spawn_y: i32 = ((rng::gen() & 0b0111) + 5) * 8;
+            let spawn_y: i32 = ((rng::gen() & 0b0011) + 2) * 16;
             bird_position.y = Num::new(spawn_y);
             bird_position.x = Num::new(8 * 30);
             bird_shown = true;
             bird.set_position(bird_position.floor());
             bird.show();
+        }
+
+        if cactus_shown {
+            cactus_position.x -= scroll_velocity;
+            cactus.set_position(cactus_position.floor());
+
+            if cactus_position.x < Num::new(-32) {
+                cactus.hide();
+                cactus_shown = false;
+            }
+        } else if frame_count - t_last_cactus_spawned > CACTUS_SPAWN_INTERVAL_FRAMES as u32 {
+            t_last_cactus_spawned = frame_count;
+            cactus_position.y = Num::new(CACTUS_Y as i32);
+            cactus_position.x = Num::new(8 * 30);
+            cactus_shown = true;
+            cactus.set_position(cactus_position.floor());
+            cactus.show();
         }
 
         // Wait for vblank, then commit the objects to the screen
