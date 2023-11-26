@@ -23,7 +23,7 @@ use agb::{
         tiled::{InfiniteScrolledMap, RegularBackgroundSize, TileFormat, TileSet, TileSetting},
         Priority,
     },
-    fixnum::{num, Num, Vector2D},
+    fixnum::{num, Num, Vector2D, Rect},
     include_aseprite,
     input::Button,
     mgba::{self, DebugLevel, Mgba},
@@ -146,6 +146,7 @@ fn main(mut gba: agb::Gba) -> ! {
     let mut bird = object.object_sprite(BIRD.sprite(0));
     let mut cactus = object.object_sprite(CACTUS.sprite(0));
 
+    let mut is_game_over: bool = false;
     let mut frame_count: u32 = 0;
     let mut position: Vector2D<Num<i32, 8>> = (0, 0).into();
     let mut scroll_velocity: Num<i32, 8> = num!(2.5);
@@ -157,6 +158,7 @@ fn main(mut gba: agb::Gba) -> ! {
     let mut bird_position: Vector2D<Num<i32, 8>> = (0, 0).into();
     let bird_velocity: Num<i32, 8> = num!(-0.4);
 
+    let dino_x: u16 = 16;
     let mut dino_y: u16 = DINO_GROUNDED_Y;
     let mut dino_velocity_y: Num<i32, 8> = Num::new(0);
     let mut dino_grounded: bool = true;
@@ -165,10 +167,14 @@ fn main(mut gba: agb::Gba) -> ! {
     let mut cactus_position: Vector2D<Num<i32, 8>> = (0, 0).into();
     let mut t_last_cactus_spawned: u32 = 0;
 
-    dino.set_x(16).set_y(dino_y).show();
+    dino.set_x(dino_x).set_y(dino_y).show();
     object.commit();
 
     loop {
+        if is_game_over {
+            continue;
+        }
+
         if dino_grounded {
             dino.set_sprite(object.sprite(DINO.sprite(frame_ranger(
                 frame_count,
@@ -216,9 +222,17 @@ fn main(mut gba: agb::Gba) -> ! {
             ))));
 
             bird_position.x += bird_velocity - scroll_velocity;
-            bird.set_position(bird_position.floor());
-
-            if bird_position.x < Num::new(-32) {
+            let bird_position_int = bird_position.floor();
+            bird.set_position(bird_position_int);
+            if bird_position_int.x >= dino_x as i32 && bird_position_int.x <= dino_x as i32 + 32 {
+                let dino_rect: Rect<i32> = Rect::new((dino_x, dino_y).into(), (32, 32).into());
+                let bird_rect: Rect<i32> = Rect::new((bird_position_int.x, bird_position_int.y + 12).into(), (32, 9).into());
+                if dino_rect.touches(bird_rect) {
+                    // Game Over
+                    dino.set_sprite(object.sprite(DINO.sprite(2)));
+                    is_game_over = true;
+                };
+            } else if bird_position_int.x < -32 {
                 bird.hide();
                 bird_shown = false;
             };
@@ -235,9 +249,19 @@ fn main(mut gba: agb::Gba) -> ! {
 
         if cactus_shown {
             cactus_position.x -= scroll_velocity;
-            cactus.set_position(cactus_position.floor());
+            let cactus_position_int = cactus_position.floor();
+            cactus.set_position(cactus_position_int);
 
-            if cactus_position.x < Num::new(-32) {
+            if cactus_position_int.x >= dino_x as i32 && cactus_position_int.x <= dino_x as i32 + 32 {
+                let dino_rect: Rect<i32> = Rect::new((dino_x, dino_y).into(), (32, 32).into());
+                let cactus_rect: Rect<i32> = Rect::new((cactus_position_int.x + 3, cactus_position_int.y + 2).into(), (26, 30).into());
+                if dino_rect.touches(cactus_rect) {
+                    // Game Over
+                    dino.set_sprite(object.sprite(DINO.sprite(2)));
+                    is_game_over = true;
+                };
+            }
+            if cactus_position_int.x < -32 {
                 cactus.hide();
                 cactus_shown = false;
             };
