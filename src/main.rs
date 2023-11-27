@@ -23,10 +23,10 @@ use agb::{
         tiled::{InfiniteScrolledMap, RegularBackgroundSize, TileFormat, TileSet, TileSetting},
         Priority,
     },
-    fixnum::{num, Num, Vector2D, Rect},
+    fixnum::{num, Num, Rect, Vector2D},
     include_aseprite,
     input::Button,
-    mgba::{self, DebugLevel, Mgba},
+    mgba::{DebugLevel, Mgba},
     rng,
 };
 use alloc::{boxed::Box, vec::Vec};
@@ -124,10 +124,10 @@ fn main(mut gba: agb::Gba) -> ! {
         Box::new(|pos| {
             let x = pos.x.rem_euclid(64) as u16;
             let y = pos.y.rem_euclid(20) as u16;
-            let tile_idx = if y >= MAP_TILES_OFFSET_Y
-                && y < MAP_TILES_OFFSET_Y + MAP_TILES_HEIGHT
-            {
-                *tile_map.get((x + 64 * (y - MAP_TILES_OFFSET_Y)) as usize).unwrap_or(&0) as usize
+            let tile_idx = if y >= MAP_TILES_OFFSET_Y && y < MAP_TILES_OFFSET_Y + MAP_TILES_HEIGHT {
+                *tile_map
+                    .get((x + 64 * (y - MAP_TILES_OFFSET_Y)) as usize)
+                    .unwrap_or(&0) as usize
             } else {
                 BLANK_TILE_IDX as usize
             };
@@ -226,7 +226,10 @@ fn main(mut gba: agb::Gba) -> ! {
             bird.set_position(bird_position_int);
             if bird_position_int.x >= dino_x as i32 && bird_position_int.x <= dino_x as i32 + 32 {
                 let dino_rect: Rect<i32> = Rect::new((dino_x, dino_y).into(), (32, 32).into());
-                let bird_rect: Rect<i32> = Rect::new((bird_position_int.x, bird_position_int.y + 12).into(), (32, 9).into());
+                let bird_rect: Rect<i32> = Rect::new(
+                    (bird_position_int.x, bird_position_int.y + 12).into(),
+                    (32, 9).into(),
+                );
                 if dino_rect.touches(bird_rect) {
                     // Game Over
                     dino.set_sprite(object.sprite(DINO.sprite(2)));
@@ -252,9 +255,13 @@ fn main(mut gba: agb::Gba) -> ! {
             let cactus_position_int = cactus_position.floor();
             cactus.set_position(cactus_position_int);
 
-            if cactus_position_int.x >= dino_x as i32 && cactus_position_int.x <= dino_x as i32 + 32 {
+            if cactus_position_int.x >= dino_x as i32 && cactus_position_int.x <= dino_x as i32 + 32
+            {
                 let dino_rect: Rect<i32> = Rect::new((dino_x, dino_y).into(), (32, 32).into());
-                let cactus_rect: Rect<i32> = Rect::new((cactus_position_int.x + 3, cactus_position_int.y + 2).into(), (26, 30).into());
+                let cactus_rect: Rect<i32> = Rect::new(
+                    (cactus_position_int.x + 3, cactus_position_int.y + 2).into(),
+                    (26, 30).into(),
+                );
                 if dino_rect.touches(cactus_rect) {
                     // Game Over
                     dino.set_sprite(object.sprite(DINO.sprite(2)));
