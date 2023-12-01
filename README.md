@@ -1,4 +1,15 @@
-# AGBRS template
+# Dino Run! GBA Game
+
+## TODO
+
+- Game Reset
+- サボテンと鳥を複数出せるようにする
+- Score View
+- 疑似乱数の使い方改善
+- レベル上げとともに敵の頻度を調節
+- 避けられない配置を作らない
+- しゃがみ
+- 当たり判定エリアの定義をより良くする
 
 ## A basic template example for agb projects
 

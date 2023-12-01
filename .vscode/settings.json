@@ -1,4 +1,8 @@
 {
     "rust-analyzer.cargo.target": "thumbv4t-none-eabi",
     "rust-analyzer.check.allTargets": false,
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
+        "editor.formatOnSave": true,
+    }
 }
