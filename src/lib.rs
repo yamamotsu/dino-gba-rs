@@ -14,10 +14,12 @@ extern crate alloc;
 
 use agb::{
     display::{
+        example_logo,
         tiled::{InfiniteScrolledMap, RegularBackgroundSize, TileFormat},
+        window::WinIn,
         Priority,
     },
-    fixnum::num,
+    fixnum::{num, Rect},
     mgba::Mgba,
 };
 use alloc::boxed::Box;
@@ -29,7 +31,7 @@ use game::{
     },
     Game, GameState, Settings, SpriteCache,
 };
-use utils::print_info;
+// use utils::print_info;
 
 mod game;
 mod utils;
@@ -44,7 +46,7 @@ pub mod constant {
 }
 
 pub fn main(mut gba: agb::Gba) -> ! {
-    let mut mgba = Mgba::new().unwrap();
+    // let mut mgba = Mgba::new().unwrap();
     let (mut oam, mut sprite_loader) = gba.display.object.get_unmanaged();
     let sprite_cache = SpriteCache::new(&mut sprite_loader);
 
@@ -100,10 +102,13 @@ pub fn main(mut gba: agb::Gba) -> ! {
             game.render(oam_frame, &sprite_cache);
             background.commit(&mut vram);
 
-            if state == GameState::Restart {
-                print_info(&mut mgba, format_args!("Restarting.."));
-                break;
-            }
+            match state {
+                GameState::Restart => {
+                    // print_info(&mut mgba, format_args!("Restarting.."));
+                    break;
+                }
+                _ => {}
+            };
         }
     }
 }

@@ -32,8 +32,9 @@ pub mod resource {
     pub(super) const CACTUS: &Sprite = SPRITES.tags().get("Cactus").sprite(0);
 
     const FONT_SPRITES: &Graphics = agb::include_aseprite!("assets/gfx/font.aseprite");
-    pub(super) const CHAR_SPRITE_KEYS: [&'static str; 11] =
-        ["G", "A", "M", "E", "O", "V", "R", "S", "C", "H", "I"];
+    pub(super) const CHAR_SPRITE_KEYS: [&'static str; 14] = [
+        "G", "A", "M", "E", "O", "V", "R", "S", "C", "H", "I", "T", "P", "?",
+    ];
     pub(super) const NUMBER: &Tag = FONT_SPRITES.tags().get("Number");
 
     // Load background tiles as `bg_tiles` module
@@ -86,7 +87,7 @@ use crate::{
         create_char_sprite_map, BIRD_COLLISION_RECT, CACTUS_COLLISION_RECT, DINO_COLLISION_RECT,
         NUMBER,
     },
-    utils::print_info,
+    // utils::print_info,
 };
 
 use self::resource::{BG_TILES_OFFSET_Y, BIRD, CACTUS, CACTUS_Y, DINO, DINO_GROUNDED_Y};
@@ -194,17 +195,29 @@ pub enum GameState {
     Restart,
 }
 
+pub enum TextAlign {
+    Left,
+    Center,
+    Right,
+}
+
 pub fn draw_score_digits(
     score: u32,
     position: Vector2D<i32>,
     oam_frame: &mut OamIterator,
     sprite_cache: &SpriteCache,
+    align: TextAlign,
 ) -> Option<()> {
-    for digit_pos in 0..6 {
-        let digit = (score / (10_u32.pow(digit_pos))) % 10;
+    for digit_pos in 0..6i32 {
+        let digit = (score / (10_u32.pow(digit_pos as u32))) % 10;
         let sprite = sprite_cache.numbers.get(digit as usize).unwrap();
-        let x = position.x + 8 * (5 - digit_pos as i32);
-        let number_position: Vector2D<i32> = (x, position.y).into();
+        let number_relative_position: i32 = match align {
+            TextAlign::Left => 7 * (5 - digit_pos),
+            TextAlign::Center => 7 * (2 - digit_pos),
+            TextAlign::Right => 7 * (-1 - digit_pos),
+        };
+        let number_position: Vector2D<i32> =
+            (position.x + number_relative_position, position.y).into();
 
         let mut object = ObjectUnmanaged::new(sprite.clone());
         object.show().set_position(number_position);
@@ -217,14 +230,30 @@ pub fn draw_str(
     position: Vector2D<i32>,
     oam_frame: &mut OamIterator,
     sprite_cache: &SpriteCache,
+    align: TextAlign,
 ) -> Option<()> {
     let uppercase = str.to_uppercase();
+    let str_len = str.len();
     for (idx, char) in uppercase.chars().enumerate() {
-        let sprite = sprite_cache.char_map.get(&char).unwrap();
+        if char.is_whitespace() {
+            continue;
+        }
+
+        let sprite = sprite_cache
+            .char_map
+            .get(&char)
+            .unwrap_or(sprite_cache.char_map.get(&'?').unwrap());
+
         let mut object = ObjectUnmanaged::new(sprite.clone());
+        let char_relative_position: i32 = match align {
+            TextAlign::Left => 7 * idx as i32,
+            TextAlign::Center => 7 * (idx as i32 - str_len as i32 / 2),
+            TextAlign::Right => 7 * (idx as i32 - str_len as i32),
+        };
+
         object
             .show()
-            .set_position((position.x + 7 * idx as i32, position.y).into());
+            .set_position((position.x + char_relative_position, position.y).into());
         oam_frame.next()?.set(&object);
     }
 
@@ -232,7 +261,7 @@ pub fn draw_str(
 }
 
 pub struct Game {
-    mgba: Mgba,
+    // mgba: Option<Mgba>,
     settings: Settings,
     state: GameState,
     frame_count: u32,
@@ -262,7 +291,7 @@ impl Game {
             / Number::new(settings.jump_duration_frames.pow(2) as i32);
 
         Self {
-            mgba: Mgba::new().unwrap(),
+            // mgba: Mgba::new().unwrap(),
             frame_count: 0,
             frames_current_level: 0,
             frames_since_last_spawn: 0,
@@ -286,6 +315,10 @@ impl Game {
     ) -> GameState {
         self.input.update();
 
+        if self.input.is_just_pressed(Button::START) {
+            self.state = GameState::Restart;
+            return self.state;
+        }
         if self.state == GameState::Over {
             if self.input.is_just_pressed(Button::A) {
                 // reset game
@@ -300,10 +333,10 @@ impl Game {
 
         // Process level up
         if self.frames_current_level >= self.settings.frames_to_level_up {
-            print_info(
-                &mut self.mgba,
-                format_args!("level up: {}", self.speed_level + 1),
-            );
+            // print_info(
+            //     &mut self.mgba,
+            //     format_args!("level up: {}", self.speed_level + 1),
+            // );
             self.scroll_velocity += self.settings.scroll_velocity_increase_per_level;
             self.speed_level += 1;
             self.frames_current_level = 0;
@@ -331,10 +364,10 @@ impl Game {
             if self.enemies.len() < self.enemies.capacity() {
                 let rnd = agb::rng::gen();
                 let spawn_check: bool = (rnd & 0b11) == 0; // 25% spawn
-                print_info(
-                    &mut self.mgba,
-                    format_args!("spawn?: {} {:b}", spawn_check, rnd & 0xFF),
-                );
+                                                           // print_info(
+                                                           //     &mut self.mgba,
+                                                           //     format_args!("spawn?: {} {:b}", spawn_check, rnd & 0xFF),
+                                                           // );
                 if spawn_check == true {
                     let enemy_selection = (rnd & 0b11100) >> 2;
                     let enemy = if enemy_selection < 3 {
@@ -384,7 +417,7 @@ impl Game {
                         .into();
 
                     if enemy_collision_rect.touches(player_collision_rect) {
-                        print_info(&mut self.mgba, format_args!("collide: {:?}", enemy.kind));
+                        // print_info(&mut self.mgba, format_args!("collide: {:?}", enemy.kind));
                         self.state = GameState::Over;
                         break;
                     }
@@ -442,20 +475,39 @@ impl Game {
         } else {
             999999
         };
-        let score_value_x = 240 - 4 - 8 * 6;
+        let score_value_right = 236;
         let score_y = (BG_TILES_OFFSET_Y * 8 - 9) as i32;
         draw_score_digits(
             score,
-            (score_value_x, score_y).into(),
+            (score_value_right, score_y).into(),
             oam_frame,
             sprite_cache,
+            TextAlign::Right,
         );
         draw_str(
             "SCORE",
-            (score_value_x - 7 * 5 - 2, score_y + 1).into(),
+            (score_value_right - 7 * 6 - 2, score_y + 1).into(),
             oam_frame,
             sprite_cache,
+            TextAlign::Right,
         );
+
+        if self.state == GameState::Over {
+            draw_str(
+                "G A M E  O V E R",
+                (120, 60).into(),
+                oam_frame,
+                sprite_cache,
+                TextAlign::Center,
+            );
+            draw_str(
+                "PRESS A TO RESTART",
+                (120, 75).into(),
+                oam_frame,
+                sprite_cache,
+                TextAlign::Center,
+            );
+        }
 
         Some(())
     }
