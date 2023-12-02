@@ -82,7 +82,7 @@ pub fn main(mut gba: agb::Gba) -> ! {
     loop {
         // Background Initialization
         let mut game = Game::from_settings(Settings {
-            init_scroll_velocity: num!(2.5),
+            init_scroll_velocity: num!(3.),
             jump_height_px: MAX_JUMP_HEIGHT_PX,
             jump_duration_frames: MAX_JUMP_DURATION_FRAMES,
             max_enemies_displayed: 3,

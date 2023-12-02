@@ -6,6 +6,7 @@ use agb::{
         tiled::{InfiniteScrolledMap, VRamManager},
     },
     fixnum::{Num, Rect, Vector2D},
+    hash_map::HashMap,
     input::{Button, ButtonController},
     mgba::Mgba,
 };
@@ -21,13 +22,19 @@ pub mod resource {
             tile_data::TileData,
         },
         fixnum::{Rect, Vector2D},
+        hash_map::HashMap,
     };
-    use alloc::vec::Vec;
+    use alloc::{string::ToString, vec::Vec};
 
     const SPRITES: &Graphics = agb::include_aseprite!("assets/gfx/dino.aseprite");
     pub(super) const DINO: &Tag = SPRITES.tags().get("Dino");
     pub(super) const BIRD: &Tag = SPRITES.tags().get("Bird");
     pub(super) const CACTUS: &Sprite = SPRITES.tags().get("Cactus").sprite(0);
+
+    const FONT_SPRITES: &Graphics = agb::include_aseprite!("assets/gfx/font.aseprite");
+    pub(super) const CHAR_SPRITE_KEYS: [&'static str; 11] =
+        ["G", "A", "M", "E", "O", "V", "R", "S", "C", "H", "I"];
+    pub(super) const NUMBER: &Tag = FONT_SPRITES.tags().get("Number");
 
     // Load background tiles as `bg_tiles` module
     agb::include_background_gfx!(bg_tiles, tiles => "assets/gfx/dino_background.bmp");
@@ -42,6 +49,14 @@ pub mod resource {
             .map(|s| usize::from_str_radix(s, 10).unwrap_or(0))
             .collect()
     }
+    pub(super) fn create_char_sprite_map() -> HashMap<char, &'static Sprite> {
+        let mut map: HashMap<char, &'static Sprite> = HashMap::new();
+        for sprite_key in CHAR_SPRITE_KEYS {
+            let sprite = FONT_SPRITES.tags().get(sprite_key).sprite(0);
+            map.insert(sprite_key.chars().next().unwrap(), sprite);
+        }
+        map
+    }
 
     pub const DINO_COLLISION_RECT: Rect<u16> = Rect::<u16> {
         position: Vector2D::new(9, 4),
@@ -52,8 +67,8 @@ pub mod resource {
         size: Vector2D::new(28, 7),
     };
     pub const CACTUS_COLLISION_RECT: Rect<u16> = Rect::<u16> {
-        position: Vector2D::new(3, 6),
-        size: Vector2D::new(25, 25),
+        position: Vector2D::new(1, 6),
+        size: Vector2D::new(27, 25),
     };
     // pub const BG_TILES_WIDTH: u16 = 64;
     pub const BG_TILES_HEIGHT: u16 = 14;
@@ -67,11 +82,14 @@ pub mod resource {
 }
 
 use crate::{
-    game::resource::{BIRD_COLLISION_RECT, CACTUS_COLLISION_RECT, DINO_COLLISION_RECT},
+    game::resource::{
+        create_char_sprite_map, BIRD_COLLISION_RECT, CACTUS_COLLISION_RECT, DINO_COLLISION_RECT,
+        NUMBER,
+    },
     utils::print_info,
 };
 
-use self::resource::{BIRD, CACTUS, CACTUS_Y, DINO, DINO_GROUNDED_Y};
+use self::resource::{BG_TILES_OFFSET_Y, BIRD, CACTUS, CACTUS_Y, DINO, DINO_GROUNDED_Y};
 
 #[derive(Clone)]
 pub struct SpriteWithCollisionRect {
@@ -84,11 +102,24 @@ pub struct SpriteCache {
     dino: Box<[SpriteWithCollisionRect]>,
     bird: Box<[SpriteWithCollisionRect]>,
     cactus: SpriteWithCollisionRect,
+    numbers: Box<[SpriteVram]>,
+    char_map: HashMap<char, SpriteVram>,
 }
 
 impl SpriteCache {
     pub fn new(loader: &mut SpriteLoader) -> Self {
         fn generate_sprites(
+            tag: &'static Tag,
+            range: Range<usize>,
+            loader: &mut SpriteLoader,
+        ) -> Box<[SpriteVram]> {
+            range
+                .map(|x| tag.sprite(x))
+                .map(|x| loader.get_vram_sprite(x))
+                .collect::<Vec<_>>()
+                .into_boxed_slice()
+        }
+        fn generate_sprites_with_collision_rect(
             tag: &'static Tag,
             range: Range<usize>,
             loader: &mut SpriteLoader,
@@ -104,13 +135,21 @@ impl SpriteCache {
                 .into_boxed_slice()
         }
 
+        let mut char_sprite_vram_map: HashMap<char, SpriteVram> = HashMap::new();
+        let char_sprite_map = create_char_sprite_map();
+        for (key, sprite) in char_sprite_map.iter() {
+            char_sprite_vram_map.insert(*key, loader.get_vram_sprite(sprite));
+        }
+
         Self {
-            dino: generate_sprites(DINO, 0..3, loader, DINO_COLLISION_RECT),
-            bird: generate_sprites(BIRD, 0..2, loader, BIRD_COLLISION_RECT),
+            dino: generate_sprites_with_collision_rect(DINO, 0..3, loader, DINO_COLLISION_RECT),
+            bird: generate_sprites_with_collision_rect(BIRD, 0..2, loader, BIRD_COLLISION_RECT),
             cactus: SpriteWithCollisionRect {
                 sprite: loader.get_vram_sprite(CACTUS),
                 rect: CACTUS_COLLISION_RECT,
             },
+            numbers: generate_sprites(NUMBER, 0..10, loader),
+            char_map: char_sprite_vram_map,
         }
     }
 }
@@ -153,6 +192,43 @@ pub enum GameState {
     Continue,
     Over,
     Restart,
+}
+
+pub fn draw_score_digits(
+    score: u32,
+    position: Vector2D<i32>,
+    oam_frame: &mut OamIterator,
+    sprite_cache: &SpriteCache,
+) -> Option<()> {
+    for digit_pos in 0..6 {
+        let digit = (score / (10_u32.pow(digit_pos))) % 10;
+        let sprite = sprite_cache.numbers.get(digit as usize).unwrap();
+        let x = position.x + 8 * (5 - digit_pos as i32);
+        let number_position: Vector2D<i32> = (x, position.y).into();
+
+        let mut object = ObjectUnmanaged::new(sprite.clone());
+        object.show().set_position(number_position);
+        oam_frame.next()?.set(&object);
+    }
+    Some(())
+}
+pub fn draw_str(
+    str: &'static str,
+    position: Vector2D<i32>,
+    oam_frame: &mut OamIterator,
+    sprite_cache: &SpriteCache,
+) -> Option<()> {
+    let uppercase = str.to_uppercase();
+    for (idx, char) in uppercase.chars().enumerate() {
+        let sprite = sprite_cache.char_map.get(&char).unwrap();
+        let mut object = ObjectUnmanaged::new(sprite.clone());
+        object
+            .show()
+            .set_position((position.x + 7 * idx as i32, position.y).into());
+        oam_frame.next()?.set(&object);
+    }
+
+    Some(())
 }
 
 pub struct Game {
@@ -335,6 +411,7 @@ impl Game {
             self.settings.animation_interval_frames as u32,
         );
 
+        // Draw player
         let sprite = if self.state == GameState::Over {
             sprite_cache.dino.get(2).unwrap().sprite.clone()
         } else if self.player.is_jumping {
@@ -348,6 +425,7 @@ impl Game {
             .set_position(self.player.position.floor());
         oam_frame.next()?.set(&player_object);
 
+        // Draw enemy
         for enemy in self.enemies.iter() {
             let sprite = match enemy.kind {
                 EnemyKind::Bird => sprite_cache.bird.get(sprite_index).unwrap().sprite.clone(),
@@ -357,6 +435,27 @@ impl Game {
             object.show().set_position(enemy.position.floor());
             oam_frame.next()?.set(&object);
         }
+
+        // Draw score
+        let score = if self.frame_count < 6000000 {
+            self.frame_count / 6
+        } else {
+            999999
+        };
+        let score_value_x = 240 - 4 - 8 * 6;
+        let score_y = (BG_TILES_OFFSET_Y * 8 - 9) as i32;
+        draw_score_digits(
+            score,
+            (score_value_x, score_y).into(),
+            oam_frame,
+            sprite_cache,
+        );
+        draw_str(
+            "SCORE",
+            (score_value_x - 7 * 5 - 2, score_y + 1).into(),
+            oam_frame,
+            sprite_cache,
+        );
 
         Some(())
     }
