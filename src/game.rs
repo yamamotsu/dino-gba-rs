@@ -195,6 +195,31 @@ pub enum GameState {
     Restart,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct SpawnInfo(u8);
+impl From<u8> for SpawnInfo {
+    fn from(value: u8) -> Self {
+        Self(value)
+    }
+}
+impl SpawnInfo {
+    pub fn delay(&self) -> u32 {
+        // 0.8 ~ 0.3sec step
+        (self.0 & 0b111) as u32 * 20 + 48
+    }
+    pub fn enemy_kind(&self) -> EnemyKind {
+        // 50% bird / 50% cactus
+        if ((self.0 & 0b111000) >> 3) < 4 {
+            EnemyKind::Bird
+        } else {
+            EnemyKind::Cactus
+        }
+    }
+    pub fn enemy_arg(&self) -> u8 {
+        (self.0 & 0b11000000) >> 6
+    }
+}
+
 pub enum TextAlign {
     Left,
     Center,
@@ -274,6 +299,7 @@ pub struct Game {
     enemies: VecDeque<Enemy>,
     frames_current_level: u32,
     frames_since_last_spawn: u32,
+    spawn_queue: VecDeque<SpawnInfo>,
 }
 
 fn frame_ranger(count: u32, start: u32, end: u32, delay: u32) -> usize {
@@ -304,6 +330,7 @@ impl Game {
             gravity_px_per_square_frame,
             settings,
             state: GameState::Continue,
+            spawn_queue: VecDeque::with_capacity(4),
         }
     }
 
@@ -330,6 +357,15 @@ impl Game {
         self.frame_count += 1;
         self.frames_current_level += 1;
         self.frames_since_last_spawn += 1;
+
+        // Update random spawn info
+        if self.spawn_queue.is_empty() {
+            let rnd = agb::rng::gen() as u32;
+            for i in 0..4 {
+                let spawn_info = SpawnInfo::from(((rnd >> (i * 8)) & 0xFF) as u8);
+                self.spawn_queue.push_back(spawn_info);
+            }
+        }
 
         // Process level up
         if self.frames_current_level >= self.settings.frames_to_level_up {
@@ -358,33 +394,39 @@ impl Game {
         }
 
         // Spawn enemy
-        if self.frames_since_last_spawn > self.settings.spawn_interval_frames as u32 {
+        if self.frames_since_last_spawn > self.spawn_queue.front().unwrap().delay() {
+            let spawn_info = self.spawn_queue.pop_front().unwrap();
+            print_info(
+                &mut self.mgba,
+                format_args!(
+                    "[T={}, dt={}] spawn: {} {:?} {}",
+                    self.frame_count,
+                    self.frames_since_last_spawn,
+                    spawn_info.delay(),
+                    spawn_info.enemy_kind(),
+                    spawn_info.enemy_arg()
+                ),
+            );
             self.frames_since_last_spawn = 0;
 
             if self.enemies.len() < self.enemies.capacity() {
-                let rnd = agb::rng::gen();
-                let spawn_check: bool = (rnd & 0b11) == 0; // 25% spawn
-                print_info(
-                    &mut self.mgba,
-                    format_args!("spawn?: {} {:b}", spawn_check, rnd & 0xFF),
-                );
-                if spawn_check == true {
-                    let enemy_selection = (rnd & 0b11100) >> 2;
-                    let enemy = if enemy_selection < 3 {
-                        // choose spawn position
-                        let spawn_y = (((rnd & 0b1100000) >> 5) + 6) * 8;
+                let enemy = match spawn_info.enemy_kind() {
+                    EnemyKind::Bird => {
+                        let spawn_y = (spawn_info.enemy_arg() as i32 + 6) * 8;
                         Enemy {
                             kind: EnemyKind::Bird,
                             position: (8 * 30, spawn_y).into(),
                         }
-                    } else {
+                    }
+                    EnemyKind::Cactus => {
+                        // let n_cactuses = spawn_info.enemy_arg() & 0b1 + 1;
                         Enemy {
                             kind: EnemyKind::Cactus,
                             position: (8 * 30, CACTUS_Y as i32).into(),
                         }
-                    };
-                    self.enemies.push_back(enemy);
-                }
+                    }
+                };
+                self.enemies.push_back(enemy);
             }
         }
 

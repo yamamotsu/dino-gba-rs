@@ -36,8 +36,8 @@ mod utils;
 
 pub mod constant {
     // GamePlay Config
-    pub const MAX_JUMP_HEIGHT_PX: u16 = 45;
-    pub const MAX_JUMP_DURATION_FRAMES: u16 = 18;
+    pub const MAX_JUMP_HEIGHT_PX: u16 = 50;
+    pub const MAX_JUMP_DURATION_FRAMES: u16 = 20;
     pub const BIRD_SPAWN_INTERVAL_FRAMES: u16 = 60 * 5;
     pub const CACTUS_SPAWN_INTERVAL_FRAMES: u16 = 60 * 3;
     pub const LEVEL_UP_INTERVAL_FRAMES: u16 = 60 * 30;
