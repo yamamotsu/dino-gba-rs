@@ -27,7 +27,7 @@ use game::{
         create_tile_map, BG_BLANK_TILE_IDX, BG_PALETTES, BG_TILES_DATA, BG_TILES_HEIGHT,
         BG_TILES_OFFSET_Y,
     },
-    Game, Settings, SpriteCache,
+    Game, GameState, Settings, SpriteCache,
 };
 use utils::print_info;
 
@@ -44,6 +44,7 @@ pub mod constant {
 }
 
 pub fn main(mut gba: agb::Gba) -> ! {
+    let mut mgba = Mgba::new().unwrap();
     let (mut oam, mut sprite_loader) = gba.display.object.get_unmanaged();
     let sprite_cache = SpriteCache::new(&mut sprite_loader);
 
@@ -78,9 +79,9 @@ pub fn main(mut gba: agb::Gba) -> ! {
 
     let vblank = agb::interrupt::VBlank::get();
 
-    // Background Initialization
-    let mut game = Game::from_settings(
-        Settings {
+    loop {
+        // Background Initialization
+        let mut game = Game::from_settings(Settings {
             init_scroll_velocity: num!(2.5),
             jump_height_px: MAX_JUMP_HEIGHT_PX,
             jump_duration_frames: MAX_JUMP_DURATION_FRAMES,
@@ -89,16 +90,20 @@ pub fn main(mut gba: agb::Gba) -> ! {
             animation_interval_frames: 10,
             scroll_velocity_increase_per_level: num!(0.1),
             frames_to_level_up: 60 * 30,
-        },
-        &sprite_cache,
-    );
+        });
 
-    loop {
-        let state = game.frame(&sprite_cache, &mut vram, &mut background);
+        loop {
+            let state = game.frame(&sprite_cache, &mut vram, &mut background);
 
-        vblank.wait_for_vblank();
-        let oam_frame = &mut oam.iter();
-        game.render(oam_frame, &sprite_cache);
-        background.commit(&mut vram);
+            vblank.wait_for_vblank();
+            let oam_frame = &mut oam.iter();
+            game.render(oam_frame, &sprite_cache);
+            background.commit(&mut vram);
+
+            if state == GameState::Restart {
+                print_info(&mut mgba, format_args!("Restarting.."));
+                break;
+            }
+        }
     }
 }

@@ -14,10 +14,13 @@ use alloc::{boxed::Box, collections::VecDeque, vec::Vec};
 pub type Number = Num<i32, 8>;
 
 pub mod resource {
-    use agb::display::{
-        object::{Graphics, Sprite, Tag},
-        palette16::Palette16,
-        tile_data::TileData,
+    use agb::{
+        display::{
+            object::{Graphics, Sprite, Tag},
+            palette16::Palette16,
+            tile_data::TileData,
+        },
+        fixnum::{Rect, Vector2D},
     };
     use alloc::vec::Vec;
 
@@ -40,7 +43,19 @@ pub mod resource {
             .collect()
     }
 
-    pub const BG_TILES_WIDTH: u16 = 64;
+    pub const DINO_COLLISION_RECT: Rect<u16> = Rect::<u16> {
+        position: Vector2D::new(9, 4),
+        size: Vector2D::new(18, 27),
+    };
+    pub const BIRD_COLLISION_RECT: Rect<u16> = Rect::<u16> {
+        position: Vector2D::new(1, 13),
+        size: Vector2D::new(28, 7),
+    };
+    pub const CACTUS_COLLISION_RECT: Rect<u16> = Rect::<u16> {
+        position: Vector2D::new(3, 6),
+        size: Vector2D::new(25, 25),
+    };
+    // pub const BG_TILES_WIDTH: u16 = 64;
     pub const BG_TILES_HEIGHT: u16 = 14;
     pub const BG_TILES_OFFSET_Y: u16 = (20 - BG_TILES_HEIGHT) / 2;
     pub const BG_BLANK_TILE_IDX: u16 = 1;
@@ -51,15 +66,24 @@ pub mod resource {
     pub const CACTUS_Y: u16 = GROUND_Y - 32;
 }
 
-use crate::utils::print_info;
+use crate::{
+    game::resource::{BIRD_COLLISION_RECT, CACTUS_COLLISION_RECT, DINO_COLLISION_RECT},
+    utils::print_info,
+};
 
 use self::resource::{BIRD, CACTUS, CACTUS_Y, DINO, DINO_GROUNDED_Y};
 
 #[derive(Clone)]
+pub struct SpriteWithCollisionRect {
+    sprite: SpriteVram,
+    rect: Rect<u16>,
+}
+
+#[derive(Clone)]
 pub struct SpriteCache {
-    dino: Box<[SpriteVram]>,
-    bird: Box<[SpriteVram]>,
-    cactus: SpriteVram,
+    dino: Box<[SpriteWithCollisionRect]>,
+    bird: Box<[SpriteWithCollisionRect]>,
+    cactus: SpriteWithCollisionRect,
 }
 
 impl SpriteCache {
@@ -68,40 +92,49 @@ impl SpriteCache {
             tag: &'static Tag,
             range: Range<usize>,
             loader: &mut SpriteLoader,
-        ) -> Box<[SpriteVram]> {
+            collision_rect: Rect<u16>,
+        ) -> Box<[SpriteWithCollisionRect]> {
             range
                 .map(|x| tag.sprite(x))
-                .map(|x| loader.get_vram_sprite(x))
+                .map(|x| SpriteWithCollisionRect {
+                    sprite: loader.get_vram_sprite(x),
+                    rect: collision_rect.clone(),
+                })
                 .collect::<Vec<_>>()
                 .into_boxed_slice()
         }
 
         Self {
-            dino: generate_sprites(DINO, 0..3, loader),
-            bird: generate_sprites(BIRD, 0..2, loader),
-            cactus: loader.get_vram_sprite(CACTUS),
+            dino: generate_sprites(DINO, 0..3, loader, DINO_COLLISION_RECT),
+            bird: generate_sprites(BIRD, 0..2, loader, BIRD_COLLISION_RECT),
+            cactus: SpriteWithCollisionRect {
+                sprite: loader.get_vram_sprite(CACTUS),
+                rect: CACTUS_COLLISION_RECT,
+            },
         }
     }
 }
 
+#[derive(Debug)]
 struct Player {
-    sprites: Box<[SpriteVram]>,
     position: Vector2D<Number>,
     vertical_speed: Number,
 
     is_jumping: bool,
 }
 
+#[derive(Debug)]
 enum EnemyKind {
     Bird,
     Cactus,
 }
+#[derive(Debug)]
 struct Enemy {
     kind: EnemyKind,
     position: Vector2D<Number>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Settings {
     pub init_scroll_velocity: Number,
 
@@ -115,14 +148,17 @@ pub struct Settings {
     pub max_enemies_displayed: usize,
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum GameState {
     Continue,
     Over,
+    Restart,
 }
 
 pub struct Game {
     mgba: Mgba,
     settings: Settings,
+    state: GameState,
     frame_count: u32,
     speed_level: u16,
     background_position: Vector2D<Number>,
@@ -140,9 +176,8 @@ fn frame_ranger(count: u32, start: u32, end: u32, delay: u32) -> usize {
 }
 
 impl Game {
-    pub fn from_settings(settings: Settings, sprite_cache: &SpriteCache) -> Self {
+    pub fn from_settings(settings: Settings) -> Self {
         let player = Player {
-            sprites: sprite_cache.dino.clone(),
             position: (16, DINO_GROUNDED_Y as i32).into(),
             vertical_speed: Number::new(0),
             is_jumping: false,
@@ -163,6 +198,7 @@ impl Game {
             enemies: VecDeque::with_capacity(settings.max_enemies_displayed),
             gravity_px_per_square_frame,
             settings,
+            state: GameState::Continue,
         }
     }
 
@@ -173,9 +209,29 @@ impl Game {
         background: &mut InfiniteScrolledMap<'_>,
     ) -> GameState {
         self.input.update();
+
+        if self.state == GameState::Over {
+            if self.input.is_just_pressed(Button::A) {
+                // reset game
+                self.state = GameState::Restart;
+            }
+            return self.state;
+        };
+
         self.frame_count += 1;
         self.frames_current_level += 1;
         self.frames_since_last_spawn += 1;
+
+        // Process level up
+        if self.frames_current_level >= self.settings.frames_to_level_up {
+            print_info(
+                &mut self.mgba,
+                format_args!("level up: {}", self.speed_level + 1),
+            );
+            self.scroll_velocity += self.settings.scroll_velocity_increase_per_level;
+            self.speed_level += 1;
+            self.frames_current_level = 0;
+        }
 
         // Calc player position
         if self.player.is_jumping {
@@ -230,31 +286,41 @@ impl Game {
                 total_enemies_out += 1;
             } else {
                 enemy.position.x -= self.scroll_velocity;
+
+                // Collision detection
+                if self.player.position.x <= enemy.position.x + 32
+                    && enemy.position.x <= self.player.position.x + 32
+                {
+                    let mut enemy_collision_rect = match enemy.kind {
+                        EnemyKind::Bird => sprite_cache.bird.get(0).unwrap().rect,
+                        EnemyKind::Cactus => sprite_cache.cactus.rect,
+                    };
+                    enemy_collision_rect.position += (
+                        enemy.position.x.floor() as u16,
+                        enemy.position.y.floor() as u16,
+                    )
+                        .into();
+                    let mut player_collision_rect = sprite_cache.dino.get(0).unwrap().rect;
+                    player_collision_rect.position += (
+                        self.player.position.x.floor() as u16,
+                        self.player.position.y.floor() as u16,
+                    )
+                        .into();
+
+                    if enemy_collision_rect.touches(player_collision_rect) {
+                        print_info(&mut self.mgba, format_args!("collide: {:?}", enemy.kind));
+                        self.state = GameState::Over;
+                        break;
+                    }
+                }
             };
         }
-        // Pop first n enemies which are out of screen
-        if total_enemies_out > 0 {
-            print_info(
-                &mut self.mgba,
-                format_args!("remove enemies: {}", total_enemies_out),
-            );
-        }
+        // Remove first n enemies which are out of screen
         self.enemies.drain(..total_enemies_out);
-
-        // Process level up
-        if self.frames_current_level >= self.settings.frames_to_level_up {
-            print_info(
-                &mut self.mgba,
-                format_args!("level up: {}", self.speed_level + 1),
-            );
-            self.scroll_velocity += self.settings.scroll_velocity_increase_per_level;
-            self.speed_level += 1;
-            self.frames_current_level = 0;
-        }
 
         self.background_position.x += self.scroll_velocity;
         background.set_pos(vram, self.background_position.floor());
-        GameState::Continue
+        self.state
     }
 
     pub fn render(
@@ -269,12 +335,14 @@ impl Game {
             self.settings.animation_interval_frames as u32,
         );
 
-        let sprite = if self.player.is_jumping {
-            self.player.sprites.get(1).unwrap()
+        let sprite = if self.state == GameState::Over {
+            sprite_cache.dino.get(2).unwrap().sprite.clone()
+        } else if self.player.is_jumping {
+            sprite_cache.dino.get(1).unwrap().sprite.clone()
         } else {
-            self.player.sprites.get(sprite_index).unwrap()
+            sprite_cache.dino.get(sprite_index).unwrap().sprite.clone()
         };
-        let mut player_object = ObjectUnmanaged::new(sprite.clone());
+        let mut player_object = ObjectUnmanaged::new(sprite);
         player_object
             .show()
             .set_position(self.player.position.floor());
@@ -282,8 +350,8 @@ impl Game {
 
         for enemy in self.enemies.iter() {
             let sprite = match enemy.kind {
-                EnemyKind::Bird => sprite_cache.bird.get(sprite_index).unwrap().clone(),
-                EnemyKind::Cactus => sprite_cache.cactus.clone(),
+                EnemyKind::Bird => sprite_cache.bird.get(sprite_index).unwrap().sprite.clone(),
+                EnemyKind::Cactus => sprite_cache.cactus.sprite.clone(),
             };
             let mut object = ObjectUnmanaged::new(sprite);
             object.show().set_position(enemy.position.floor());
