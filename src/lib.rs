@@ -19,6 +19,7 @@ use agb::{
     },
     fixnum::num,
     mgba::Mgba,
+    save::{Error, SaveData},
 };
 use alloc::boxed::Box;
 use constant::{MAX_JUMP_DURATION_FRAMES, MAX_JUMP_HEIGHT_PX};
@@ -29,18 +30,25 @@ use game::{
     },
     Game, GameState, Settings, SpriteCache,
 };
+use save::SaveBuffer;
 use utils::print_info;
 
 mod game;
+mod save;
 mod utils;
 
 pub mod constant {
     // GamePlay Config
-    pub const MAX_JUMP_HEIGHT_PX: u16 = 50;
-    pub const MAX_JUMP_DURATION_FRAMES: u16 = 20;
+    pub const MAX_JUMP_HEIGHT_PX: u16 = 45;
+    pub const MAX_JUMP_DURATION_FRAMES: u16 = 16;
     pub const BIRD_SPAWN_INTERVAL_FRAMES: u16 = 60 * 5;
     pub const CACTUS_SPAWN_INTERVAL_FRAMES: u16 = 60 * 3;
     pub const LEVEL_UP_INTERVAL_FRAMES: u16 = 60 * 30;
+}
+
+pub fn save(save_access: &mut SaveData, save_buffer: SaveBuffer) -> Result<(), Error> {
+    let mut writer = save_access.prepare_write(0..5)?;
+    writer.write(0, &save_buffer.as_array())
 }
 
 pub fn main(mut gba: agb::Gba) -> ! {
@@ -77,18 +85,45 @@ pub fn main(mut gba: agb::Gba) -> ! {
     background.show();
     background.commit(&mut vram);
 
+    gba.save.init_sram();
+    let mut save_access = gba.save.access().unwrap();
+    let mut save_buffer = SaveBuffer::new();
+    save_access.read(0, save_buffer.as_mut_array()).unwrap();
+    print_info(
+        &mut mgba,
+        format_args!("[init] saved data: {:?}", save_buffer),
+    );
+
+    let mut hi_score = if save_buffer.is_savedata_exist() == false {
+        print_info(
+            &mut mgba,
+            format_args!("[init] initializing hi score save slot..."),
+        );
+        let result = save(&mut save_access, SaveBuffer::new());
+        if result.is_err() {
+            print_info(
+                &mut mgba,
+                format_args!("[ERR] failed to write: {:?}", result.unwrap_err()),
+            );
+        }
+        0
+    } else {
+        save_buffer.get_score()
+    };
+
     let vblank = agb::interrupt::VBlank::get();
 
     loop {
         let mut game = Game::from_settings(Settings {
-            init_scroll_velocity: num!(3.),
+            init_scroll_velocity: num!(3.4),
             jump_height_px: MAX_JUMP_HEIGHT_PX,
             jump_duration_frames: MAX_JUMP_DURATION_FRAMES,
             max_enemies_displayed: 3,
             spawn_interval_frames: 60,
             animation_interval_frames: 10,
-            scroll_velocity_increase_per_level: num!(0.1),
+            scroll_velocity_increase_per_level: num!(0.15),
             frames_to_level_up: 60 * 30,
+            hi_score,
         });
 
         loop {
@@ -100,6 +135,22 @@ pub fn main(mut gba: agb::Gba) -> ! {
             background.commit(&mut vram);
 
             match state {
+                GameState::Over(score) => {
+                    if score > hi_score {
+                        print_info(
+                            &mut mgba,
+                            format_args!("Hi score beat: {} -> {}", hi_score, score),
+                        );
+                        hi_score = score;
+                        let result = save(&mut save_access, hi_score.into());
+                        if result.is_err() {
+                            print_info(
+                                &mut mgba,
+                                format_args!("[ERR] failed to write: {:?}", result.unwrap_err()),
+                            );
+                        }
+                    }
+                }
                 GameState::Restart => {
                     print_info(&mut mgba, format_args!("Restarting.."));
                     break;

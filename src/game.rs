@@ -186,12 +186,14 @@ pub struct Settings {
     pub jump_height_px: u16,
     pub jump_duration_frames: u16,
     pub max_enemies_displayed: usize,
+
+    pub hi_score: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum GameState {
     Continue,
-    Over,
+    Over(u32),
     Restart,
 }
 
@@ -205,7 +207,7 @@ impl From<u8> for SpawnInfo {
 impl SpawnInfo {
     pub fn delay(&self) -> u32 {
         // 0.8 ~ 0.3sec step
-        (self.0 & 0b111) as u32 * 20 + 48
+        (self.0 & 0b111) as u32 * 12 + 40
     }
     pub fn enemy_kind(&self) -> EnemyKind {
         // 50% bird / 50% cactus
@@ -215,7 +217,7 @@ impl SpawnInfo {
             EnemyKind::Cactus
         }
     }
-    pub fn enemy_arg(&self) -> u8 {
+    pub fn enemy_arg_2bit(&self) -> u8 {
         (self.0 & 0b11000000) >> 6
     }
 }
@@ -334,6 +336,14 @@ impl Game {
         }
     }
 
+    fn current_score(&self) -> u32 {
+        if self.frame_count < 6000000 {
+            self.frame_count / 6
+        } else {
+            999999
+        }
+    }
+
     pub fn frame(
         &mut self,
         sprite_cache: &SpriteCache,
@@ -346,13 +356,17 @@ impl Game {
             self.state = GameState::Restart;
             return self.state;
         }
-        if self.state == GameState::Over {
-            if self.input.is_just_pressed(Button::A) {
-                // reset game
-                self.state = GameState::Restart;
+
+        match self.state {
+            GameState::Over(_) => {
+                if self.input.is_just_pressed(Button::A) {
+                    // reset game
+                    self.state = GameState::Restart;
+                }
+                return self.state;
             }
-            return self.state;
-        };
+            _ => {}
+        }
 
         self.frame_count += 1;
         self.frames_current_level += 1;
@@ -404,7 +418,7 @@ impl Game {
                     self.frames_since_last_spawn,
                     spawn_info.delay(),
                     spawn_info.enemy_kind(),
-                    spawn_info.enemy_arg()
+                    spawn_info.enemy_arg_2bit()
                 ),
             );
             self.frames_since_last_spawn = 0;
@@ -412,7 +426,7 @@ impl Game {
             if self.enemies.len() < self.enemies.capacity() {
                 let enemy = match spawn_info.enemy_kind() {
                     EnemyKind::Bird => {
-                        let spawn_y = (spawn_info.enemy_arg() as i32 + 6) * 8;
+                        let spawn_y = (spawn_info.enemy_arg_2bit() as i32 + 6) * 8;
                         Enemy {
                             kind: EnemyKind::Bird,
                             position: (8 * 30, spawn_y).into(),
@@ -460,7 +474,7 @@ impl Game {
 
                     if enemy_collision_rect.touches(player_collision_rect) {
                         print_info(&mut self.mgba, format_args!("collide: {:?}", enemy.kind));
-                        self.state = GameState::Over;
+                        self.state = GameState::Over(self.current_score());
                         break;
                     }
                 }
@@ -487,12 +501,15 @@ impl Game {
         );
 
         // Draw player
-        let sprite = if self.state == GameState::Over {
-            sprite_cache.dino.get(2).unwrap().sprite.clone()
-        } else if self.player.is_jumping {
-            sprite_cache.dino.get(1).unwrap().sprite.clone()
-        } else {
-            sprite_cache.dino.get(sprite_index).unwrap().sprite.clone()
+        let sprite = match self.state {
+            GameState::Over(_) => sprite_cache.dino.get(2).unwrap().sprite.clone(),
+            _ => {
+                if self.player.is_jumping {
+                    sprite_cache.dino.get(1).unwrap().sprite.clone()
+                } else {
+                    sprite_cache.dino.get(sprite_index).unwrap().sprite.clone()
+                }
+            }
         };
         let mut player_object = ObjectUnmanaged::new(sprite);
         player_object
@@ -512,11 +529,7 @@ impl Game {
         }
 
         // Draw score
-        let score = if self.frame_count < 6000000 {
-            self.frame_count / 6
-        } else {
-            999999
-        };
+        let score = self.current_score();
         let score_value_right = 236;
         let score_y = (BG_TILES_OFFSET_Y * 8 - 9) as i32;
         draw_score_digits(
@@ -534,7 +547,24 @@ impl Game {
             TextAlign::Right,
         );
 
-        if self.state == GameState::Over {
+        // Draw hi score
+        let hi_score_y = (BG_TILES_OFFSET_Y * 8 - 18) as i32;
+        draw_score_digits(
+            self.settings.hi_score,
+            (score_value_right, hi_score_y).into(),
+            oam_frame,
+            sprite_cache,
+            TextAlign::Right,
+        );
+        draw_str(
+            "HI",
+            (score_value_right - 7 * 6 - 2, hi_score_y + 1).into(),
+            oam_frame,
+            sprite_cache,
+            TextAlign::Right,
+        );
+
+        if let GameState::Over(_) = self.state {
             draw_str(
                 "G A M E  O V E R",
                 (120, 60).into(),
