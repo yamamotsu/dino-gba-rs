@@ -32,8 +32,8 @@ pub mod resource {
     pub(super) const CACTUS: &Sprite = SPRITES.tags().get("Cactus").sprite(0);
 
     const FONT_SPRITES: &Graphics = agb::include_aseprite!("assets/gfx/font.aseprite");
-    pub(super) const CHAR_SPRITE_KEYS: [&'static str; 14] = [
-        "G", "A", "M", "E", "O", "V", "R", "S", "C", "H", "I", "T", "P", "?",
+    pub(super) const CHAR_SPRITE_KEYS: [&'static str; 16] = [
+        "G", "A", "M", "E", "O", "V", "R", "S", "C", "H", "I", "T", "P", "?", "U", "D",
     ];
     pub(super) const NUMBER: &Tag = FONT_SPRITES.tags().get("Number");
 
@@ -193,6 +193,7 @@ pub struct Settings {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum GameState {
     Continue,
+    Pause,
     Over(u32),
     Restart,
 }
@@ -353,16 +354,30 @@ impl Game {
         self.input.update();
 
         if self.input.is_just_pressed(Button::START) {
-            self.state = GameState::Restart;
-            return self.state;
+            match self.state {
+                GameState::Continue => {
+                    self.state = GameState::Pause;
+                    return self.state;
+                }
+                GameState::Pause => {
+                    self.state = GameState::Continue;
+                    return self.state;
+                }
+                _ => {}
+            };
         }
 
         match self.state {
             GameState::Over(_) => {
-                if self.input.is_just_pressed(Button::A) {
+                if self.input.is_just_pressed(Button::A)
+                    || self.input.is_just_pressed(Button::START)
+                {
                     // reset game
                     self.state = GameState::Restart;
                 }
+                return self.state;
+            }
+            GameState::Pause => {
                 return self.state;
             }
             _ => {}
@@ -564,21 +579,40 @@ impl Game {
             TextAlign::Right,
         );
 
-        if let GameState::Over(_) = self.state {
-            draw_str(
-                "G A M E  O V E R",
-                (120, 60).into(),
-                oam_frame,
-                sprite_cache,
-                TextAlign::Center,
-            );
-            draw_str(
-                "PRESS A TO RESTART",
-                (120, 75).into(),
-                oam_frame,
-                sprite_cache,
-                TextAlign::Center,
-            );
+        match self.state {
+            GameState::Over(_) => {
+                draw_str(
+                    "G A M E  O V E R",
+                    (120, 60).into(),
+                    oam_frame,
+                    sprite_cache,
+                    TextAlign::Center,
+                );
+                draw_str(
+                    "PRESS A TO RESTART",
+                    (120, 75).into(),
+                    oam_frame,
+                    sprite_cache,
+                    TextAlign::Center,
+                );
+            }
+            GameState::Pause => {
+                draw_str(
+                    "P A U S E D",
+                    (120, 60).into(),
+                    oam_frame,
+                    sprite_cache,
+                    TextAlign::Center,
+                );
+                draw_str(
+                    "PRESS START TO RESUME",
+                    (120, 75).into(),
+                    oam_frame,
+                    sprite_cache,
+                    TextAlign::Center,
+                );
+            }
+            _ => {}
         }
 
         Some(())
