@@ -24,7 +24,7 @@ pub mod resource {
         fixnum::{Rect, Vector2D},
         hash_map::HashMap,
     };
-    use alloc::{string::ToString, vec::Vec};
+    use alloc::vec::Vec;
 
     const SPRITES: &Graphics = agb::include_aseprite!("assets/gfx/dino.aseprite");
     pub(super) const DINO: &Tag = SPRITES.tags().get("Dino");
@@ -87,7 +87,7 @@ use crate::{
         create_char_sprite_map, BIRD_COLLISION_RECT, CACTUS_COLLISION_RECT, DINO_COLLISION_RECT,
         NUMBER,
     },
-    // utils::print_info,
+    utils::print_info,
 };
 
 use self::resource::{BG_TILES_OFFSET_Y, BIRD, CACTUS, CACTUS_Y, DINO, DINO_GROUNDED_Y};
@@ -261,7 +261,7 @@ pub fn draw_str(
 }
 
 pub struct Game {
-    // mgba: Option<Mgba>,
+    mgba: Option<Mgba>,
     settings: Settings,
     state: GameState,
     frame_count: u32,
@@ -291,7 +291,7 @@ impl Game {
             / Number::new(settings.jump_duration_frames.pow(2) as i32);
 
         Self {
-            // mgba: Mgba::new().unwrap(),
+            mgba: Mgba::new(),
             frame_count: 0,
             frames_current_level: 0,
             frames_since_last_spawn: 0,
@@ -333,10 +333,10 @@ impl Game {
 
         // Process level up
         if self.frames_current_level >= self.settings.frames_to_level_up {
-            // print_info(
-            //     &mut self.mgba,
-            //     format_args!("level up: {}", self.speed_level + 1),
-            // );
+            print_info(
+                &mut self.mgba,
+                format_args!("level up: {}", self.speed_level + 1),
+            );
             self.scroll_velocity += self.settings.scroll_velocity_increase_per_level;
             self.speed_level += 1;
             self.frames_current_level = 0;
@@ -364,10 +364,10 @@ impl Game {
             if self.enemies.len() < self.enemies.capacity() {
                 let rnd = agb::rng::gen();
                 let spawn_check: bool = (rnd & 0b11) == 0; // 25% spawn
-                                                           // print_info(
-                                                           //     &mut self.mgba,
-                                                           //     format_args!("spawn?: {} {:b}", spawn_check, rnd & 0xFF),
-                                                           // );
+                print_info(
+                    &mut self.mgba,
+                    format_args!("spawn?: {} {:b}", spawn_check, rnd & 0xFF),
+                );
                 if spawn_check == true {
                     let enemy_selection = (rnd & 0b11100) >> 2;
                     let enemy = if enemy_selection < 3 {
@@ -417,7 +417,7 @@ impl Game {
                         .into();
 
                     if enemy_collision_rect.touches(player_collision_rect) {
-                        // print_info(&mut self.mgba, format_args!("collide: {:?}", enemy.kind));
+                        print_info(&mut self.mgba, format_args!("collide: {:?}", enemy.kind));
                         self.state = GameState::Over;
                         break;
                     }
