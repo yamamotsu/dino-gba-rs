@@ -20,6 +20,7 @@ use agb::{
     fixnum::num,
     mgba::Mgba,
     save::{Error, SaveData},
+    sound::mixer::Frequency,
 };
 use alloc::boxed::Box;
 use constant::{MAX_JUMP_DURATION_FRAMES, MAX_JUMP_HEIGHT_PX};
@@ -85,6 +86,9 @@ pub fn main(mut gba: agb::Gba) -> ! {
     background.show();
     background.commit(&mut vram);
 
+    let mut mixer = gba.mixer.mixer(Frequency::Hz10512);
+    mixer.enable();
+
     gba.save.init_sram();
     let mut save_access = gba.save.access().unwrap();
     let mut save_buffer = SaveBuffer::new();
@@ -127,7 +131,8 @@ pub fn main(mut gba: agb::Gba) -> ! {
         });
 
         loop {
-            let state = game.frame(&sprite_cache, &mut vram, &mut background);
+            let state = game.frame(&sprite_cache, &mut vram, &mut background, &mut mixer);
+            mixer.frame();
 
             vblank.wait_for_vblank();
             let oam_frame = &mut oam.iter();

@@ -5,10 +5,11 @@ use agb::{
         object::{OamIterator, ObjectUnmanaged, SpriteLoader, SpriteVram, Tag},
         tiled::{InfiniteScrolledMap, VRamManager},
     },
-    fixnum::{Num, Rect, Vector2D},
+    fixnum::{num, Num, Rect, Vector2D},
     hash_map::HashMap,
     input::{Button, ButtonController},
     mgba::Mgba,
+    sound::mixer::Mixer,
 };
 use alloc::{boxed::Box, collections::VecDeque, vec::Vec};
 
@@ -23,6 +24,7 @@ pub mod resource {
         },
         fixnum::{Rect, Vector2D},
         hash_map::HashMap,
+        sound::mixer::SoundChannel,
     };
     use alloc::vec::Vec;
 
@@ -59,6 +61,24 @@ pub mod resource {
         map
     }
 
+    pub(super) enum SoundEffectKind {
+        Jump,
+        Over,
+        Up,
+    }
+    pub(super) const JUMP_SOUND: &[u8] = include_bytes!("../assets/sfx/jump.raw"); // include_wav!("assets/sfx/jump.wav");
+    pub(super) const OVER_SOUND: &[u8] = include_bytes!("../assets/sfx/over.raw");
+    pub(super) const UP_SOUND: &[u8] = include_bytes!("../assets/sfx/up.raw");
+
+    pub(super) fn get_sound(kind: SoundEffectKind) -> SoundChannel {
+        let data: &'static [u8] = match kind {
+            SoundEffectKind::Jump => JUMP_SOUND,
+            SoundEffectKind::Over => OVER_SOUND,
+            SoundEffectKind::Up => UP_SOUND,
+        };
+        SoundChannel::new(data)
+    }
+
     pub const DINO_COLLISION_RECT: Rect<u16> = Rect::<u16> {
         position: Vector2D::new(9, 4),
         size: Vector2D::new(18, 27),
@@ -90,7 +110,9 @@ use crate::{
     utils::print_info,
 };
 
-use self::resource::{BG_TILES_OFFSET_Y, BIRD, CACTUS, CACTUS_Y, DINO, DINO_GROUNDED_Y};
+use self::resource::{
+    get_sound, SoundEffectKind, BG_TILES_OFFSET_Y, BIRD, CACTUS, CACTUS_Y, DINO, DINO_GROUNDED_Y,
+};
 
 #[derive(Clone)]
 pub struct SpriteWithCollisionRect {
@@ -288,6 +310,12 @@ pub fn draw_str(
     Some(())
 }
 
+fn play_sound(mixer: &mut Mixer, kind: SoundEffectKind) {
+    let mut sound = get_sound(kind);
+    sound.volume(num!(0.5));
+    mixer.play_sound(sound);
+}
+
 pub struct Game {
     mgba: Option<Mgba>,
     settings: Settings,
@@ -350,6 +378,7 @@ impl Game {
         sprite_cache: &SpriteCache,
         vram: &mut VRamManager,
         background: &mut InfiniteScrolledMap<'_>,
+        mixer: &mut Mixer<'_>,
     ) -> GameState {
         self.input.update();
 
@@ -402,6 +431,8 @@ impl Game {
                 &mut self.mgba,
                 format_args!("level up: {}", self.speed_level + 1),
             );
+            play_sound(mixer, SoundEffectKind::Up);
+
             self.scroll_velocity += self.settings.scroll_velocity_increase_per_level;
             self.speed_level += 1;
             self.frames_current_level = 0;
@@ -417,6 +448,8 @@ impl Game {
             }
             self.player.vertical_speed += self.gravity_px_per_square_frame;
         } else if self.input.is_just_pressed(Button::A) {
+            play_sound(mixer, SoundEffectKind::Jump);
+
             self.player.vertical_speed =
                 -self.gravity_px_per_square_frame * (self.settings.jump_duration_frames as i32);
             self.player.is_jumping = true;
@@ -459,8 +492,15 @@ impl Game {
             }
         }
 
-        // Calc enemies' position
+        // Calc enemies' position and collision detection
+        let mut player_collision_rect = sprite_cache.dino.get(0).unwrap().rect;
+        player_collision_rect.position += (
+            self.player.position.x.floor() as u16,
+            self.player.position.y.floor() as u16,
+        )
+            .into();
         let mut total_enemies_out: usize = 0;
+        let mut is_collided: bool = false;
         for enemy in self.enemies.iter_mut() {
             if enemy.position.x.floor() < -32 {
                 total_enemies_out += 1;
@@ -480,21 +520,19 @@ impl Game {
                         enemy.position.y.floor() as u16,
                     )
                         .into();
-                    let mut player_collision_rect = sprite_cache.dino.get(0).unwrap().rect;
-                    player_collision_rect.position += (
-                        self.player.position.x.floor() as u16,
-                        self.player.position.y.floor() as u16,
-                    )
-                        .into();
 
                     if enemy_collision_rect.touches(player_collision_rect) {
                         print_info(&mut self.mgba, format_args!("collide: {:?}", enemy.kind));
-                        self.state = GameState::Over(self.current_score());
-                        break;
+                        is_collided = true;
                     }
                 }
             };
         }
+        if is_collided {
+            play_sound(mixer, SoundEffectKind::Over);
+            self.state = GameState::Over(self.current_score());
+        }
+
         // Remove first n enemies which are out of screen
         self.enemies.drain(..total_enemies_out);
 
