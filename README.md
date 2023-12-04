@@ -2,6 +2,8 @@
 
 "Dino-run" is a Game Boy Advance exclusive video game written in Rust with [agb](https://github.com/agbrs/agb) library.
 
+![gameplay](./doc/gameplay.gif)
+
 ## ![Cactus](./doc/images/cactus.bmp)  TODO
 
 - Squatting
