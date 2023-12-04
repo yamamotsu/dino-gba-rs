@@ -1,20 +1,13 @@
-# Dino Run! GBA Game
+# ![Dino](./doc/images/dino.gif) Dino-Run-GBA-rs ![Bird](./doc/images/bird.gif)![Bird](./doc/images/bird.gif)
 
-## TODO
+"Dino-run" is a Game Boy Advance exclusive video game written in Rust with [agb](https://github.com/agbrs/agb) library.
 
-- Game Reset
-- サボテンと鳥を複数出せるようにする
-- Score View
-- 疑似乱数の使い方改善
-- レベル上げとともに敵の頻度を調節
-- 避けられない配置を作らない
-- しゃがみ
-- 当たり判定エリアの定義をより良くする
+## ![Cactus](./doc/images/cactus.bmp)  TODO
 
-## A basic template example for agb projects
+- Squatting
+- Better random number generator initialization using hi-score data
 
-This makes getting started with a new project for the Game Boy Advance in rust really simple, by providing
-all the boiler plate files for you.
+---
 
 ## Building
 
